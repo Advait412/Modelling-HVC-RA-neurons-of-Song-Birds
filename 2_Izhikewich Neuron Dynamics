@@ -1,0 +1,51 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Parameters
+dt = 0.01
+sim_time = 300  # ms
+steps = int(sim_time / dt)
+
+# Izhikevich neuron parameters
+a = 0.035
+b = 0.2
+c = -50
+d = 1
+
+# Initial conditions
+v = -65.0
+u = b * v
+
+# Arrays to store results
+voltage = []
+time = []
+
+# External current (e.g., step current)
+I = 4  # mA
+
+# Simulation loop
+for i in range(steps):
+    t = i * dt
+    time.append(t)
+    voltage.append(v)
+
+    # Izhikevich model equations
+    dv = (0.04 * v ** 2 + 5 * v + 140 - u + I) * dt
+    du = a * (b * v - u) * dt
+    v += dv
+    u += du
+
+    # Spike and reset
+    if v >= 30:
+        voltage[-1] = 30  # Save spike peak for plot
+        v = c
+        u += d
+
+# Plotting
+plt.figure(figsize=(10, 5))
+plt.plot(time, voltage)
+plt.title("Izhikevich Chattering Neuron Spiking Activity")
+plt.xlabel("Time (ms)")
+plt.ylabel("Membrane Potential (mV)")
+plt.grid(True)
+plt.show()
