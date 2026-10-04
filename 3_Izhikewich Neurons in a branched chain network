@@ -1,0 +1,73 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load adjacency list of network (each Network[i] is a list of neighbor indices)
+Network = np.load("2_chains_groupsize_10_2_Syllable_Stochastic_Network_with_inhibitors.npy", allow_pickle=True)
+# Neighbours
+def feeding_neigh_indices(i):
+    return np.where(Network.T[i] > 0)[0]
+
+# Initialize neuron states
+N = len(Network)
+print(N)
+current_potentials = np.full(N, -70.0)
+new_potentials = np.zeros(N)
+sample_neuron_index = 5
+sample_neuron = []
+sample_time = []
+spike_index = []
+spike_time = []
+
+# Time Parameters
+dt = 0.1
+sim_time = 500 # ms
+steps = int(sim_time / dt)
+# Izhikevich neuron parameters (same for all)
+a = 0.02
+b = 0.2
+c = -65
+d = 8
+u = b * current_potentials.copy()  
+
+for t in range(steps):
+    for n in range(N):
+        v = current_potentials[n] 
+        I = 0
+        neighbours = feeding_neigh_indices(n)
+        for neigh in neighbours:
+            if current_potentials[neigh]>=30:
+                I+= 30*Network[neigh][n]
+        if (n//10 == 0 )  :
+            I += 10
+        # After spiking resetting        
+        if v >= 30:
+            spike_index.append(n)
+            spike_time.append(t*dt)
+            v = c
+            u[n] = u[n]+d               
+        # Izhikevich model equations
+        dv = (0.04 * v ** 2 + 5 * v + 140 - u[n] + I) * dt
+        du = a * (b * v - u[n]) * dt
+        v += dv
+        u[n] += du
+        new_potentials[n] = v
+    current_potentials = new_potentials
+    sample_neuron.append(current_potentials[sample_neuron_index])
+    sample_time.append(t*dt)
+    
+    
+l1 = 120;l2 = 240
+plt.title("potential of a single neuron")
+plt.xlabel("time")
+plt.ylabel("membrane potential")
+plt.plot(sample_time,sample_neuron)  
+plt.show() 
+
+plt.title("Raster plot of two chain network with groupsize 10")
+plt.xlabel("time")
+plt.ylabel("Neuron index")
+plt.axhline(y=l1, color='r', linestyle='--', linewidth=2, label="syllable A-B boundary")
+plt.axhline(y=l2, color='r', linestyle='--', linewidth=2, label="inhibitory neurons boundary") 
+plt.scatter(spike_time,spike_index)
+plt.grid(True)
+plt.show()
