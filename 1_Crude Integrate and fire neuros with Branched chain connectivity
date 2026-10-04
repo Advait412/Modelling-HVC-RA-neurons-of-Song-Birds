@@ -1,0 +1,116 @@
+import random
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+
+# NETWORK CONSTRUCTION 
+
+no_chains = 2
+groups_per_chain = 6
+N = no_chains * groups_per_chain + 1
+Graph = np.zeros((N, N))
+
+for i in range(N):
+    if i == 0 or i % 2 == 1:
+        continue
+    if i == no_chains * groups_per_chain:
+        ip = 2
+    else:
+        ip = i + 2
+
+    if i % 6 != 0:
+        Graph[i][ip] = 2
+        Graph[i][ip - 1] = 2
+        Graph[i - 1][ip] = 2
+        Graph[i - 1][ip - 1] = 2
+    else:
+        Graph[i][ip] = 0.5
+        Graph[i][ip - 1] = 0.5
+        Graph[i - 1][ip] = 0.5
+        Graph[i - 1][ip - 1] = 0.5
+        Graph[i][i - 4] = 0.5
+        Graph[i][i - 5] = 0.5
+        Graph[i - 1][i - 4] = 0.5
+        Graph[i - 1][i - 5] = 0.5
+
+# Save network matrix
+np.save("Branched_Chain_Network_2_Chains2.npy", Graph)
+
+# Plot network graph
+Network = nx.from_numpy_array(Graph)
+pos = {
+    0: (9, 9),
+    1: (10, 10),
+    2: (10, 9),
+    3: (11, 10),
+    4: (11, 9),
+    5: (12, 10),
+    6: (12, 9),
+    7: (13, 10),
+    8: (13, 9),
+    9: (14, 10),
+    10: (14, 9),
+    11: (15, 10),
+    12: (15, 9),
+}
+
+plt.figure(figsize=(8, 5))
+nx.draw(
+    Network,
+    pos,
+    with_labels=True,
+    node_color="lightblue",
+    edge_color="black",
+    width=2,
+)
+plt.title("Network Graph Structure")
+plt.show()
+
+
+# NEURAL ACTIVATION SIMULATION
+
+connections = Graph  # Direct in-memory transfer from constructed network
+num_neurons = len(connections)
+groupsize = min(10, num_neurons)  # Ensures initial nodes stay within bounds
+
+# Initialize state
+state = np.zeros(num_neurons)
+state[:groupsize] = 1.0  # Activate initial group
+
+cycles = 3
+t_steps = cycles * no_chains * groups_per_chain
+state_history = []
+
+# Simulation loop
+for t in range(t_steps):
+    # Vectorized activation calculation with Gaussian noise
+    activations = connections.T @ state + 0.5 * np.random.normal(
+        loc=0, scale=1, size=num_neurons
+    )
+    new_state = (activations >= 1).astype(float)
+    state = new_state.copy()
+    state_history.append(state)
+
+
+# RASTER PLOT 
+times, neurons = [], []
+
+for t, snap in enumerate(state_history):
+    active_indices = np.where(snap == 1)[0]
+    times.extend([t] * len(active_indices))
+    neurons.extend(active_indices)
+
+plt.figure(figsize=(8, 5))
+plt.scatter(times, neurons, color="b", s=20, marker="_")
+
+# Separator lines adjusted to fit active neuron range
+if num_neurons > 60:
+    plt.axhline(y=60, color="r", linestyle="--", alpha=0.7)
+if num_neurons > 120:
+    plt.axhline(y=120, color="r", linestyle="--", alpha=0.7)
+
+plt.xlabel("Time Steps")
+plt.ylabel("Neuron Index")
+plt.title("Neuron Activation Raster Plot")
+plt.grid(True, linestyle="--", alpha=0.6)
+plt.show()
