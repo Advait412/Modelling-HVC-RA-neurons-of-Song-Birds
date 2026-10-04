@@ -1,0 +1,148 @@
+import numpy as np
+import random
+import os
+import matplotlib.pyplot as plt
+from collections import deque
+import itertools
+
+def generate_network(no_chains, group_size, groups_per_chain, connection_prob_pm,connection_prob_mp, inh):
+    N = no_chains * groups_per_chain * group_size
+    N_inh = int(0.4 * N)
+    total_neurons = N + N_inh
+    Network = np.zeros((total_neurons, total_neurons))
+
+    for i in range(N):
+        group_index = i // group_size
+        chain_index = group_index // groups_per_chain
+        local_group_index = group_index % groups_per_chain
+
+        if local_group_index + 1 < groups_per_chain:
+            next_group_start = (group_index + 1) * group_size
+        else:
+            next_chain_index = (chain_index + 1) % no_chains
+            next_group_start = next_chain_index * groups_per_chain * group_size
+            base_index = chain_index * groups_per_chain * group_size
+            for k in range(base_index, base_index + group_size):
+                Network[i, k] = 1
+
+        for k in range(next_group_start, next_group_start + group_size):
+            Network[i, k] = 1
+
+    # Excitatory to inhibitory
+    exc_to_inh = np.random.rand(N, N_inh) < connection_prob_pm
+    Network[:N, N:] = inh * np.random.rand(N, N_inh) * exc_to_inh
+
+    # Inhibitory to excitatory
+    inh_to_exc = np.random.rand(N_inh, N) < connection_prob_mp
+    Network[N:, :N] = -inh * np.random.rand(N_inh, N) * inh_to_exc
+
+    os.makedirs("networks", exist_ok=True)
+    filename = f"networks/{no_chains}_chains_{group_size}_groupsize_{groups_per_chain}_p1{connection_prob_pm:.2f}_p2{connection_prob_mp:.2f}_inh{inh}.npy"
+    np.save(filename, Network)
+    return filename
+
+
+def simulate_network(network_file, group_size, synaptic_delay, external_input, output_strength, connection_prob_pm,connection_prob_mp, tag):
+    Network = np.load(network_file)
+    N = Network.shape[0]
+    current_potentials = np.full(N, -70.0)
+    u = 0.2 * current_potentials.copy()
+
+    dt = 0.1
+    steps = int(800 / dt)
+    a, b, c, d = 0.02, 0.2, -49, 1.5
+    synaptic_delay = int(synaptic_delay)
+    I_buffer = deque([np.zeros(N) for _ in range(synaptic_delay)], maxlen=synaptic_delay)
+
+    spike_index, spike_time = [], []
+
+    for t in range(steps):
+        delayed_I = I_buffer[0]
+        I_list = np.zeros(N)
+
+        stim_indices = np.where(np.arange(N) // group_size == 0)[0]
+        if t < 500:
+            I_list[stim_indices] += external_input
+
+        spikes = current_potentials >= 30
+        I_list[spikes] += output_strength
+
+        for n in range(N):
+            input_indices = np.where(Network[:, n] > 0)[0]
+            I_syn = sum(Network[i, n] * delayed_I[i] * (1 + random.gauss(0, 0.5)) for i in input_indices)
+            I = I_list[n] + I_syn
+
+            v = current_potentials[n]
+            if v >= 20:
+                spike_index.append(n)
+                spike_time.append(t * dt)
+                current_potentials[n] = c
+                u[n] += d
+            else:
+                dv = (0.04 * v**2 + 5 * v + 140 - u[n] + I) * dt
+                du = a * (b * v - u[n]) * dt
+                current_potentials[n] += dv
+                u[n] += du
+
+        I_buffer.append(I_list.copy())
+
+    os.makedirs("scan_param_space", exist_ok=True)
+    plt.figure(figsize=(10, 6))
+    plt.title(f"Raster Plot (conn_prob_pm={connection_prob_pm:.2f},conn_prob_mp={connection_prob_mp:.2f}, out_str={output_strength})")
+    plt.xlabel("Time (ms)")
+    plt.ylabel("Neuron Index")
+    plt.axhline(y= 200, color='r', linestyle='--')
+    plt.axhline(y= 400, color='r', linestyle='--')
+    plt.scatter(spike_time, spike_index, s=1.3)
+    plt.grid(True)
+
+    raster_path = f"scan_param_space/raster_{tag}.png"
+    plt.savefig(raster_path)
+    plt.close()
+    return raster_path
+
+
+# Main experiment loop
+param_space = {
+    "output_strength": np.arange(22, 27, 0.5),
+    "connection_prob_pm": np.arange(0.5, 0.8, 0.05),
+    "connection_prob_mp": np.arange(0.5, 0.8, 0.05),
+    "inh": np.arange(1, 10, 1.0),
+    "synaptic_delay": np.arange(15, 25,1.0)
+}
+
+fixed_params = {
+    "no_chains": 2,
+    "group_size": 10,
+    "groups_per_chain": 20,
+    "external_input": 4
+}
+
+os.makedirs("networks", exist_ok=True)
+
+for combo in itertools.product(*param_space.values()):
+    variable_params = dict(zip(param_space.keys(), combo))
+    tag = "_".join([f"{k}{v}" for k, v in {**fixed_params, **variable_params}.items()])
+    print(f"Running simulation: {tag}")
+
+    network_file = generate_network(
+        fixed_params["no_chains"],
+        fixed_params["group_size"],
+        fixed_params["groups_per_chain"],
+        variable_params["connection_prob_pm"],
+        variable_params["connection_prob_mp"],
+        variable_params["inh"]
+    )
+
+    simulate_network(
+        network_file,
+        group_size=fixed_params["group_size"],
+        synaptic_delay=variable_params["synaptic_delay"],
+        external_input=fixed_params["external_input"],
+        output_strength=variable_params["output_strength"],
+        connection_prob_pm=variable_params["connection_prob_pm"],
+        connection_prob_mp=variable_params["connection_prob_mp"],
+        tag=tag
+    )
+
+    print(f"Completed simulation: {tag}")
